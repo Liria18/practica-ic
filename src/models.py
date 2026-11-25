@@ -14,7 +14,7 @@ from sklearn.model_selection import KFold, cross_val_predict
 from sklearn.pipeline import Pipeline
 
 from src.config import N_FOLDS, RANDOM_STATE
-from src.preprocessing import build_preprocessor
+from src.preprocessing import build_preprocessor, build_spline_preprocessor
 
 
 class LogTargetRegressor(BaseEstimator, RegressorMixin):
@@ -60,6 +60,50 @@ class MezclaRegressor(BaseEstimator, RegressorMixin):
         return self.peso * self.a_.predict(X) + (1 - self.peso) * self.b_.predict(X)
 
 
+class SplineLogRegressor(BaseEstimator, RegressorMixin):
+    """Ridge + B-splines sobre log(price), con smearing por marca.
+
+    - En log, el precio es casi una suma de efectos (categoría, marca, peso...),
+      así que un modelo aditivo con splines lo captura muy bien.
+    - Para volver a euros se multiplica por la media de exp(residuo) (smearing
+      de Duan), pero calculada POR MARCA: el ruido es mayor en las marcas
+      Premium, así que su factor de corrección es mayor.
+    - Los residuos para el factor salen de una CV interna (fuera de muestra),
+      para no infravalorarlos.
+    """
+
+    def __init__(self, n_knots=5, alpha=0.3, smearing="brand"):
+        self.n_knots = n_knots
+        self.alpha = alpha
+        self.smearing = smearing
+
+    def _pipeline(self):
+        return Pipeline([("prep", build_spline_preprocessor(self.n_knots)), ("model", Ridge(alpha=self.alpha))])
+
+    def fit(self, X, y):
+        y_log = np.log(np.asarray(y, dtype=float))
+        self.model_ = self._pipeline().fit(X, y_log)
+        residuos = np.zeros(len(y_log))
+        for tr, va in KFold(5, shuffle=True, random_state=1).split(X):
+            m = self._pipeline().fit(X.iloc[tr], y_log[tr])
+            residuos[va] = y_log[va] - m.predict(X.iloc[va])
+        factores = np.exp(residuos)
+        self.factor_global_ = float(factores.mean())
+        self.factor_marca_ = pd.Series(factores).groupby(np.asarray(X["brand"])).mean().to_dict()
+        return self
+
+    def predict(self, X):
+        pred = np.exp(self.model_.predict(X))
+        if self.smearing == "brand":
+            return pred * X["brand"].map(self.factor_marca_).fillna(self.factor_global_).to_numpy()
+        return pred * self.factor_global_
+
+
+def spline_log(n_knots=5, alpha=0.3, smearing="brand"):
+    """Modelo aditivo (Ridge + splines) sobre log(price) con smearing por marca."""
+    return SplineLogRegressor(n_knots=n_knots, alpha=alpha, smearing=smearing)
+
+
 def ridge_log(alpha=1.0):
     """Ridge con one-hot y escalado, sobre log(price) con corrección de smearing."""
     return LogTargetRegressor(Pipeline([("prep", build_preprocessor()), ("model", Ridge(alpha=alpha))]))
@@ -90,6 +134,7 @@ def get_models() -> dict:
         "HistGradientBoosting": Pipeline([("prep", arbol), ("model", HistGradientBoostingRegressor(
             random_state=RANDOM_STATE))]),
         "LightGBM (log price)": lgbm_log(),
+        "Splines (log price)": spline_log(),
     }
 
 
