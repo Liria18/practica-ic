@@ -8,24 +8,25 @@ Reglas (ver README.md):
 - Si tu RMSE CV es más bajo que el de README.md, abre un PR que sustituya este
   fichero (y lo que necesites en preprocessing.py / models.py).
 """
-from src.models import MezclaRegressor, lgbm_log, ridge_log
+from src.models import MezclaRegressor, lgbm_log, spline_log
 
 # Nombre corto y autor, aparecen al ejecutar evaluar/train
-DESCRIPCION = "Mezcla 0.7 Ridge (log price) + 0.3 LightGBM (log price)"
-AUTOR = "Jose"
+DESCRIPCION = "Mezcla 0.85 Splines (log price, smearing por marca) + 0.15 LightGBM (log price)"
+AUTOR = "Grupo"
 
-# Hiperparámetros elegidos en notebooks/04_tuning.ipynb
-MEJOR_ALPHA_RIDGE = 0.3
+# Splines: 5 nodos y alpha 0.3 (los mejores en CV entre 4-8 nodos y alpha 0.03-3)
+PARAMS_SPLINES = dict(n_knots=5, alpha=0.3, smearing="brand")
+# LightGBM: los mismos hiperparámetros que eligió Jose en notebooks/04_tuning.ipynb
 MEJORES_PARAMS_LGBM = dict(
     n_estimators=800, learning_rate=0.04, num_leaves=3, min_child_samples=20,
     colsample_bytree=0.7, reg_lambda=5,
 )
-PESO_RIDGE = 0.7
+PESO_SPLINES = 0.85
 
 
 def build_final_model():
     return MezclaRegressor(
-        modelo_a=ridge_log(alpha=MEJOR_ALPHA_RIDGE),
+        modelo_a=spline_log(**PARAMS_SPLINES),
         modelo_b=lgbm_log(**MEJORES_PARAMS_LGBM),
-        peso=PESO_RIDGE,
+        peso=PESO_SPLINES,
     )

@@ -10,7 +10,7 @@ import pandas as pd
 from sklearn.compose import ColumnTransformer
 from sklearn.impute import SimpleImputer
 from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import OneHotEncoder, OrdinalEncoder, StandardScaler
+from sklearn.preprocessing import OneHotEncoder, OrdinalEncoder, SplineTransformer, StandardScaler
 
 from src.config import CATEGORICAL, ID_COL, NUMERIC, TARGET
 
@@ -52,6 +52,9 @@ def add_features(df: pd.DataFrame) -> pd.DataFrame:
     out["log_shipping"] = np.log1p(out["shipping_cost"])
     out["log_factor_descuento"] = np.log(1 - out["discount"])
     out["log_factor_margen"] = np.log1p(out["margin"])
+    # log(peso) sin el +1: en log-log la relación peso-precio es casi una recta.
+    # Solo la usa el modelo de splines (no está en NUEVAS_NUMERICAS).
+    out["log_peso"] = np.log(out["weight_kg"])
     return out
 
 
@@ -84,3 +87,23 @@ def build_preprocessor(escalar: bool = True, onehot: bool = True) -> ColumnTrans
     return ColumnTransformer(
         [("num", Pipeline(pasos_num), numericas), ("cat", Pipeline(pasos_cat), CATEGORICAL)]
     )
+
+
+SPLINE_NUMERICAS = ["log_peso", "rating", "log_reviews", "shipping_cost", "margin", "discount"]
+
+
+def build_spline_preprocessor(n_knots: int = 5) -> ColumnTransformer:
+    """One-hot en categóricas + B-splines cúbicos en las numéricas.
+
+    Los splines dejan que un modelo lineal aprenda curvas (p. ej. el efecto del
+    margen o del rating no es una recta), sin perder la estructura aditiva en log.
+    """
+    pasos_cat = [
+        ("imputer", SimpleImputer(strategy="constant", fill_value="Desconocido")),
+        ("encoder", OneHotEncoder(handle_unknown="ignore")),
+    ]
+    return ColumnTransformer([
+        ("cat", Pipeline(pasos_cat), CATEGORICAL),
+        ("num", SplineTransformer(n_knots=n_knots, degree=3), SPLINE_NUMERICAS),
+        ("bin", "passthrough", ["is_promo"]),
+    ])

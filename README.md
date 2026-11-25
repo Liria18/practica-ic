@@ -8,9 +8,9 @@ Modelo de regresión que predice `price` de productos de e-commerce. Métrica: *
 
 | | |
 |---|---|
-| **Modelo** | Mezcla 0.7 Ridge (log price) + 0.3 LightGBM (log price) |
-| **Autor** | Jose |
-| **RMSE CV (5 folds)** | **52.381** |
+| **Modelo** | Mezcla 0.85 Splines (log price, smearing por marca) + 0.15 LightGBM (log price) |
+| **Autor** | Grupo |
+| **RMSE CV (5 folds)** | **52.297** |
 
 El historial de modelos que han ido sustituyendo al anterior está en [HISTORIAL.md](HISTORIAL.md).
 
